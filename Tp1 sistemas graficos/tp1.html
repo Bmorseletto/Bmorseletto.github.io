@@ -1,0 +1,438 @@
+<!doctype html>
+<html>
+    <head>
+        <title></title>        
+        <style>
+            body{ background-color: grey; }
+            canvas{ background-color: rgb(23, 149, 221); }
+			textarea{ background-color: black; foreground-color: white;}
+        </style>
+    </head>
+    <body>
+
+    	<center>    		            
+            <canvas id="my-canvas" width="1000" height="800">model
+            	Your browser does not support the HTML5 canvas element.
+    		</canvas>    		
+    	</center>
+
+        <script type="text/javascript" src="js/gl-matrix.js"></script>
+        
+        <script id="shader-vs" type="x-shader/x-vertex">
+
+            precision highp float;
+
+            attribute vec3 aVertexPosition;
+            attribute vec3 aVertexNormal;
+
+            uniform mat4 modelMatrix;            
+            uniform mat4 viewMatrix;
+            uniform mat4 projMatrix;
+
+            uniform mat4 normalMatrix;
+
+            varying vec3 vNormal;    
+            varying vec3 vPosWorld;  
+
+            void main(void) {
+                gl_Position = projMatrix * viewMatrix * modelMatrix * vec4(aVertexPosition, 1.0);
+
+                vPosWorld=(modelMatrix*vec4(aVertexPosition,1.0)).xyz;    //la posicion en coordenadas de mundo
+                vNormal=(normalMatrix*vec4(aVertexNormal,1.0)).xyz;       //la normal en coordenadas de mundo                
+                
+            }
+        </script>
+
+        <script id="shader-fs" type="x-shader/x-fragment">
+            precision highp float;
+            varying vec3 vNormal;
+            varying vec3 vPosWorld;
+
+            void main(void) {
+
+                vec3 lightVec=normalize(vec3(0.0,3.0,5.0)-vPosWorld);
+                vec3 diffColor=mix(vec3(0.7,0.7,0.7),vNormal,0.4);
+                vec3 color=dot(lightVec,vNormal)*diffColor+vec3(0.2,0.2,0.2);
+
+               gl_FragColor = vec4(color,1.0);
+            }
+        </script>
+        
+        <script>
+
+
+            var mat4=glMatrix.mat4;
+            var vec3=glMatrix.vec3;
+
+            var gl = null,
+            canvas = null,
+
+            glProgram = null,
+            fragmentShader = null,
+            vertexShader = null;
+                
+            var vertexPositionAttribute = null,
+            trianglesVerticeBuffer = null,
+            vertexNormalAttribute = null,gl
+            trianglesNormalBuffer = null,
+            trianglesIndexBuffer = null;
+              
+            var buffercubo=null;
+            var buffercil=null;
+
+            
+            var cuboMatrix = mat4.create();
+            var cilindroMatrix = mat4.create();
+            var viewMatrix = mat4.create();
+            var projMatrix = mat4.create();
+            var normalMatrix = mat4.create();
+            var rotate_angle = -1.57078;
+            
+
+         
+            function initWebGL(){
+
+                canvas = document.getElementById("my-canvas");  
+
+                try{
+                    gl = canvas.getContext("webgl");      
+
+                }catch(e){
+                    alert(  "Error: Your browser does not appear to support WebGL.");
+                }
+
+                if(gl) {
+
+                    setupWebGL();
+                    initShaders();
+                    
+                    buffercil=setupCilindro(100, 300,1);
+                    buffercubo=setupCubo(4, 5, 2);
+
+                    //setupVertexShaderMatrix();
+                    //setupVertexShaderMatrixCil();
+                    drawCubo(buffercubo[0], buffercubo[1], buffercubo[2]);
+                    drawCilindro(buffercil[0], buffercil[1], buffercil[2]);
+                    //drawScene();
+                    //tick();   
+
+                }else{    
+                    alert(  "Error: Your browser does not appear to support WebGL.");
+                }
+
+            }
+           
+
+            function setupWebGL(){
+                gl.enable(gl.DEPTH_TEST);
+                //set the clear color
+                gl.clearColor(0.1, 0.1, 0.2, 1.0);     
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);     
+    
+                gl.viewport(0, 0, canvas.width, canvas.height);
+
+                // Matrix de Proyeccion Perspectiva
+
+                mat4.perspective(projMatrix,45, canvas.width / canvas.height, 0.1, 100.0);
+                
+                mat4.identity(cuboMatrix);
+                mat4.rotate(cuboMatrix,cuboMatrix, -1.57078, [1.0, 0.0, 0.0]);
+                mat4.identity(viewMatrix);
+                mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+            }
+                    
+                    
+            function initShaders() {
+                //get shader source
+                var fs_source = document.getElementById('shader-fs').innerHTML,
+                    vs_source = document.getElementById('shader-vs').innerHTML;
+                    fs_source_cil = document.getElementById('shader-fs').innerHTML,
+                    vs_source_cil = document.getElementById('shader-vs').innerHTML;
+                //compile shaders    
+                vertexShader = makeShader(vs_source, gl.VERTEX_SHADER);
+                fragmentShader = makeShader(fs_source, gl.FRAGMENT_SHADER);
+                vertexShader_cil = makeShader(vs_source_cil, gl.VERTEX_SHADER);
+                fragmentShader_cil = makeShader(fs_source_cil, gl.FRAGMENT_SHADER);
+                
+                //create program
+                glProgram = gl.createProgram();
+                
+                //attach and link shaders to the program
+                gl.attachShader(glProgram, vertexShader);
+                gl.attachShader(glProgram, fragmentShader);
+                gl.attachShader(glProgram, vertexShader_cil);
+                gl.attachShader(glProgram, fragmentShader_cil);
+                gl.linkProgram(glProgram);
+
+                if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
+                    alert("Unable to initialize the shader program.");
+                }
+                
+                //use program
+                gl.useProgram(glProgram);
+            }
+            
+            function makeShader(src, type){
+                //compile the vertex shader
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, src);
+                gl.compileShader(shader);
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.log("Error compiling shader: " + gl.getShaderInfoLog(shader));
+                }
+                return shader;
+            }
+            
+            function getPos(alfa,beta,gamma, rows,trows,r){
+
+                //var r=2;
+                var nx=Math.cos(alfa);
+                var nz=Math.sin(alfa);
+                if(rows == 0||rows==trows-1){
+                    nx=0;
+                    nz=0;
+                }
+
+                var x=nx*r;//alfa;;
+                var y=beta*2;//ny*r*f;
+                var z=nz*r;//gamma;
+
+                return [x,y,z];
+            }
+
+            function getNrm(alfa,beta){
+                var p=getPos(alfa,beta);
+                var v=vec3.create();
+                vec3.normalize(v,p);
+
+                var delta=0.05;
+                var p1=getPos(alfa,beta);
+                var p2=getPos(alfa,beta+delta);
+                var p3=getPos(alfa+delta,beta);
+
+                var v1=vec3.fromValues(p2[0]-p1[0],p2[1]-p1[1],p2[2]-p1[2]);
+                var v2=vec3.fromValues(p3[0]-p1[0],p3[1]-p1[1],p3[2]-p1[2]);
+
+                vec3.normalize(v1,v1);
+                vec3.normalize(v2,v2);
+                
+                var n=vec3.create();
+                vec3.cross(n,v1,v2);
+                vec3.scale(n,n,-1);
+                return n;
+            }
+
+
+            function cilindroGenerico(rows, cols, pos, normal,r){
+                var angulo=45;
+                for (var i=0;i<rows;i++){
+                    for (var j=0;j<cols;j++){
+                        
+                        var alfa=j/(cols-1)*Math.PI*2;
+                        var beta=i/(rows-1)-2/3;
+                        var gamma = j/(cols-1)*Math.PI*2
+
+                        
+                        /*f(i==0){
+                            if(j==0){
+                                var p=getPos((rows/2)/(rows-1),1/(rows-1),2/4);
+                            }else{var p=getPos(2/4,1/(rows-1),(rows/2)/(rows-1));}
+                            //var p=getPos(2/4,1/(rows-1),(rows/2)/(rows-1));
+                        }else if(i==rows-1){
+                            if(j==0){
+                                var p=getPos((rows/2)/(rows-1),(rows-2)/(rows-1),2/4); 
+                            }
+                            else{var p=getPos(2/4,(rows-2)/(rows-1),(rows/2)/(rows-1));} 
+                        }else{
+                            if(j<1){var p=getPos(0,beta, -alfa);}
+                            else{var p=getPos(alfa,beta, 0)};
+                        }*/
+                        if(i==rows-1){
+                            alfa=0; beta=(i-1)/(rows-1)-2/3;;
+                        }
+                        if(i==0){
+                            alfa=0; beta=(i+1)/(rows-1)-2/3;;
+                        }
+                        var p=getPos(alfa, beta, gamma, i,rows,r);
+                        pos.push(p[0]);
+                        pos.push(p[1]);
+                        pos.push(p[2]);
+
+                        var n=getNrm(alfa,beta);
+
+                        normal.push(0);
+                        normal.push(0);
+                        normal.push(1);
+                        
+                       
+                    }
+
+                }
+            
+            }
+
+            function setupBuffers(rows, cols,r)
+            {
+                var pos=[];
+                var normal=[];
+                cilindroGenerico(rows, cols, pos, normal,r);
+                
+         
+                trianglesVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);    
+            
+
+                trianglesNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normal), gl.STATIC_DRAW);
+
+                var index=[];
+
+                for (var i=0;i<rows-1;i++){
+                    index.push(i*cols);
+                    for (var j=0;j<cols-1;j++){
+                        index.push(i*cols+j);
+                        index.push((i+1)*cols+j);
+                        index.push(i*cols+j+1);
+                        index.push((i+1)*cols+j+1);
+                    }
+                    index.push((i+1)*cols+cols-1);
+                }
+                
+                
+                trianglesIndexBuffer = gl.createBuffer();
+                trianglesIndexBuffer.number_vertex_point = index.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
+                return [trianglesVerticeBuffer, trianglesNormalBuffer, trianglesIndexBuffer]    
+            }
+            
+            
+            function setupVertexShaderMatrix(){
+                normalMatrix = mat4.create();
+                var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
+                var viewMatrixUniform  = gl.getUniformLocation(glProgram, "viewMatrix");
+                var projMatrixUniform  = gl.getUniformLocation(glProgram, "projMatrix");
+                var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+
+                gl.uniformMatrix4fv(modelMatrixUniform, false, cuboMatrix);
+                //gl.uniformMatrix4fv(viewMatrixUniform, false, viewMatrix);
+                //gl.uniformMatrix4fv(projMatrixUniform, false, projMatrix);
+                //gl.uniformMatrix4fv(normalMatrixUniform, false, normalMatrix);
+                
+                
+                mat4.identity(cuboMatrix);
+                //mat4.rotate(cuboMatrix,cuboMatrix, rotate_angle, [0,0, 1]);
+                //mat4.identity(normalMatrix);
+                //mat4.multiply(normalMatrix,viewMatrix,cuboMatrix);
+                mat4.invert(cuboMatrix,cuboMatrix);
+                //mat4.transpose(normalMatrix,normalMatrix);
+            }                  
+            
+            function setupVertexShaderMatrixCil(){
+                normalMatrix = mat4.create();
+                var modelMatrixUniformcil = gl.getUniformLocation(glProgram, "modelMatrix");
+                var viewMatrixUniformcil  = gl.getUniformLocation(glProgram, "viewMatrix");
+                var projMatrixUniformcil  = gl.getUniformLocation(glProgram, "projMatrix");
+                var normalMatrixUniformcil  = gl.getUniformLocation(glProgram, "normalMatrix");
+
+                gl.uniformMatrix4fv(modelMatrixUniformcil, false, cilindroMatrix);
+                gl.uniformMatrix4fv(viewMatrixUniformcil, false, viewMatrix);
+                gl.uniformMatrix4fv(projMatrixUniformcil, false, projMatrix);
+                gl.uniformMatrix4fv(normalMatrixUniformcil, false, normalMatrix);
+                
+                
+                /*mat4.identity(cilindroMatrix);
+                mat4.identity(normalMatrix);
+                mat4.multiply(normalMatrix,viewMatrix,cilindroMatrix);
+                mat4.invert(normalMatrix,normalMatrix);
+                mat4.transpose(normalMatrix,normalMatrix);*/
+                
+            }                  
+
+            function setupCubo(rows, cols, r){
+                var bc=setupBuffers(rows, cols, r);
+                setupVertexShaderMatrix();
+                return bc;
+            }
+
+            function setupCilindro(rows, cols, r){
+                var bcil=setupBuffers(rows, cols,r);
+                setupVertexShaderMatrixCil();
+                return bcil;
+            }
+
+
+            function drawCubo(trianglesVerticeBuffer, trianglesNormalBuffer, trianglesIndexBuffer){
+                setupVertexShaderMatrix();
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
+                gl.drawElements( gl.TRIANGLE_STRIP, trianglesIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                
+            }
+
+            function drawCilindro(trianglesVerticeBuffer, trianglesNormalBuffer, trianglesIndexBuffer){
+
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
+                gl.drawElements( gl.TRIANGLE_STRIP, trianglesIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+
+            }
+
+
+            function drawScene(){
+                setupVertexShaderMatrix();
+                drawCubo();
+                drawCilindro();
+            }
+
+           
+            function animate(){
+                
+                rotate_angle += 0.01;
+                mat4.identity(cuboMatrix);
+                //mat4.rotate(modelMatrix,modelMatrix, rotate_angle, [1,0, 0]);
+
+
+                mat4.identity(normalMatrix);
+                mat4.multiply(normalMatrix,viewMatrix,cuboMatrix);
+                mat4.invert(normalMatrix,normalMatrix);
+                mat4.transpose(normalMatrix,normalMatrix);
+
+            }
+            
+            
+            function tick(){
+
+                requestAnimationFrame(tick);
+                drawScene();
+                animate();
+            }
+
+            window.onload=initWebGL;
+
+        </script>
+
+
+    </body>
+</html>
